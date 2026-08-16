@@ -1,0 +1,340 @@
+{
+  "access": {
+    "embargo": {
+      "active": false,
+      "reason": null
+    },
+    "files": "public",
+    "record": "public",
+    "status": "open"
+  },
+  "created": "2025-10-02T09:54:15.917386+00:00",
+  "custom_fields": {},
+  "deletion_status": {
+    "is_deleted": false,
+    "status": "P"
+  },
+  "files": {
+    "count": 3,
+    "enabled": true,
+    "entries": {
+      "C-7 GPS Static Multipath True Position \u2013 Clear-sky (no spoofers).bin": {
+        "access": {
+          "hidden": false
+        },
+        "checksum": "md5:a03dedd79ac4208f6d60b4c916484dba",
+        "ext": "bin",
+        "id": "bbb18dbe-670c-49b6-af77-218682e9c67b",
+        "key": "C-7 GPS Static Multipath True Position \u2013 Clear-sky (no spoofers).bin",
+        "links": {
+          "content": "https://zenodo.org/api/records/17249795/files/C-7%20GPS%20Static%20Multipath%20True%20Position%20%E2%80%93%20Clear-sky%20(no%20spoofers).bin/content",
+          "self": "https://zenodo.org/api/records/17249795/files/C-7%20GPS%20Static%20Multipath%20True%20Position%20%E2%80%93%20Clear-sky%20(no%20spoofers).bin"
+        },
+        "metadata": {},
+        "mimetype": "application/octet-stream",
+        "size": 29999832000,
+        "storage_class": "L"
+      },
+      "Readme.pdf": {
+        "access": {
+          "hidden": false
+        },
+        "checksum": "md5:f7c186c381f361c926caf377d2a0b719",
+        "ext": "pdf",
+        "id": "205e404f-34d2-469c-a00e-15b2007c77be",
+        "key": "Readme.pdf",
+        "links": {
+          "content": "https://zenodo.org/api/records/17249795/files/Readme.pdf/content",
+          "iiif_api": "https://zenodo.org/api/iiif/record:17249795:Readme.pdf/full/full/0/default.png",
+          "iiif_base": "https://zenodo.org/api/iiif/record:17249795:Readme.pdf",
+          "iiif_canvas": "https://zenodo.org/api/iiif/record:17249795/canvas/Readme.pdf",
+          "iiif_info": "https://zenodo.org/api/iiif/record:17249795:Readme.pdf/info.json",
+          "self": "https://zenodo.org/api/records/17249795/files/Readme.pdf"
+        },
+        "metadata": {
+          "height": 842,
+          "width": 595
+        },
+        "mimetype": "application/pdf",
+        "size": 137701,
+        "storage_class": "L"
+      },
+      "default_param_GPSL1_Chapter2.txt": {
+        "access": {
+          "hidden": false
+        },
+        "checksum": "md5:f4fd03050188d434ca26aba9f0d3c4f3",
+        "ext": "txt",
+        "id": "2f7a2540-ab9f-4293-b9a6-747e11aa8e45",
+        "key": "default_param_GPSL1_Chapter2.txt",
+        "links": {
+          "content": "https://zenodo.org/api/records/17249795/files/default_param_GPSL1_Chapter2.txt/content",
+          "self": "https://zenodo.org/api/records/17249795/files/default_param_GPSL1_Chapter2.txt"
+        },
+        "metadata": {},
+        "mimetype": "text/plain",
+        "size": 8083,
+        "storage_class": "L"
+      }
+    },
+    "order": [],
+    "total_bytes": 29999977784
+  },
+  "id": "17249795",
+  "is_draft": false,
+  "is_published": true,
+  "links": {
+    "access": "https://zenodo.org/api/records/17249795/access",
+    "access_grants": "https://zenodo.org/api/records/17249795/access/grants",
+    "access_links": "https://zenodo.org/api/records/17249795/access/links",
+    "access_request": "https://zenodo.org/api/records/17249795/access/request",
+    "access_users": "https://zenodo.org/api/records/17249795/access/users",
+    "archive": "https://zenodo.org/api/records/17249795/files-archive",
+    "archive_media": "https://zenodo.org/api/records/17249795/media-files-archive",
+    "communities": "https://zenodo.org/api/records/17249795/communities",
+    "communities-suggestions": "https://zenodo.org/api/records/17249795/communities-suggestions",
+    "doi": "https://doi.org/10.5281/zenodo.17249795",
+    "draft": "https://zenodo.org/api/records/17249795/draft",
+    "file_modification": "https://zenodo.org/api/records/17249795/file-modification",
+    "files": "https://zenodo.org/api/records/17249795/files",
+    "latest": "https://zenodo.org/api/records/17249795/versions/latest",
+    "latest_html": "https://zenodo.org/records/17249795/latest",
+    "media_files": "https://zenodo.org/api/records/17249795/media-files",
+    "parent": "https://zenodo.org/api/records/15572975",
+    "parent_doi": "https://doi.org/10.5281/zenodo.15572975",
+    "parent_doi_html": "https://zenodo.org/doi/10.5281/zenodo.15572975",
+    "parent_html": "https://zenodo.org/records/15572975",
+    "preview_html": "https://zenodo.org/records/17249795?preview=1",
+    "quota_increase": "https://zenodo.org/api/records/17249795/quota-increase",
+    "request_deletion": "https://zenodo.org/api/records/17249795/request-deletion",
+    "requests": "https://zenodo.org/api/records/17249795/requests",
+    "reserve_doi": "https://zenodo.org/api/records/17249795/draft/pids/doi",
+    "self": "https://zenodo.org/api/records/17249795",
+    "self_doi": "https://doi.org/10.5281/zenodo.17249795",
+    "self_doi_html": "https://zenodo.org/doi/10.5281/zenodo.17249795",
+    "self_html": "https://zenodo.org/records/17249795",
+    "self_iiif_manifest": "https://zenodo.org/api/iiif/record:17249795/manifest",
+    "self_iiif_sequence": "https://zenodo.org/api/iiif/record:17249795/sequence/default",
+    "thumbnails": {
+      "10": "https://zenodo.org/api/iiif/record:17249795:Readme.pdf/full/%5E10,/0/default.jpg",
+      "100": "https://zenodo.org/api/iiif/record:17249795:Readme.pdf/full/%5E100,/0/default.jpg",
+      "1200": "https://zenodo.org/api/iiif/record:17249795:Readme.pdf/full/%5E1200,/0/default.jpg",
+      "250": "https://zenodo.org/api/iiif/record:17249795:Readme.pdf/full/%5E250,/0/default.jpg",
+      "50": "https://zenodo.org/api/iiif/record:17249795:Readme.pdf/full/%5E50,/0/default.jpg",
+      "750": "https://zenodo.org/api/iiif/record:17249795:Readme.pdf/full/%5E750,/0/default.jpg"
+    },
+    "versions": "https://zenodo.org/api/records/17249795/versions"
+  },
+  "media_files": {
+    "count": 1,
+    "enabled": true,
+    "entries": {
+      "Readme.pdf.ptif": {
+        "access": {
+          "hidden": true
+        },
+        "ext": "ptif",
+        "id": "05e81fb3-7d35-45e1-a079-f994de19c7ce",
+        "key": "Readme.pdf.ptif",
+        "links": {
+          "content": "https://zenodo.org/api/records/17249795/files/Readme.pdf.ptif/content",
+          "self": "https://zenodo.org/api/records/17249795/files/Readme.pdf.ptif"
+        },
+        "metadata": null,
+        "mimetype": "application/octet-stream",
+        "processor": {
+          "source_file_id": "205e404f-34d2-469c-a00e-15b2007c77be",
+          "status": "finished",
+          "type": "image-tiles"
+        },
+        "size": 0,
+        "storage_class": "L"
+      }
+    },
+    "order": [],
+    "total_bytes": 0
+  },
+  "metadata": {
+    "creators": [
+      {
+        "person_or_org": {
+          "family_name": "Ur Rahman",
+          "given_name": "Syed Muneeb",
+          "name": "Ur Rahman, Syed Muneeb",
+          "type": "personal"
+        },
+        "role": {
+          "id": "contactperson",
+          "title": {
+            "de": "Kontaktperson",
+            "en": "Contact person"
+          }
+        }
+      }
+    ],
+    "dates": [
+      {
+        "date": "2025-04",
+        "type": {
+          "id": "created",
+          "title": {
+            "de": "Erstellt",
+            "en": "Created"
+          }
+        }
+      }
+    ],
+    "description": "<div>Tuni2025 Datasets for GNSS - GPS Spoofing&nbsp;</div>\n<div>&nbsp;</div>\n<div>Selected Scenarios is a curated subset of high-resolution GNSS spoofing measurement data recorded in a controlled laboratory environment at Tampere University, Finland. The dataset supports research in spoofing detection, RF signal analysis, and GNSS receiver security.</div>\n<div>&nbsp;</div>\n<div>Each scenario contains:</div>\n<div>&nbsp;</div>\n<div>A raw I/Q measurement file (approx. 30 GB, interleaved 32-bit float format)</div>\n<div>&nbsp;</div>\n<div>A scenario-specific README file documenting signal setup, spoofing conditions, and usage notes</div>\n<div>&nbsp;</div>\n<div>This release includes 9 GPS E1 signal scenarios, covering both spoofed and authentic (clear-sky) cases, true spoofer position attacks, and varying numbers of spoofers. The data was collected using a USRP-2945R software-defined radio front-end at 50 MSps sampling rate, with spoofing signals generated using a Spectracom GSG-6 GNSS simulator where applicable.</div>\n<div>&nbsp;</div>\n<div>\ud83d\udcc1 Included Scenarios</div>\n<div>&nbsp;</div>\n<div>\n<div>C-5 GPS Static No Multipath True Position &ndash; Clear-sky (no spoofers) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; - Version-v1</div>\n<div>SS-17 GPS Static No Multipath True Position &ndash; 1 Spoofer &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; - Version-v2</div>\n<div>SS-18 GPS Static No Multipath True Position &ndash; 2 Spoofers &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; - Version-v3</div>\n<div>SS-20 GPS Static No Multipath True Position &ndash; 4 Spoofers &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; - Version-v4</div>\n<div>C-7 GPS Static No Multipath True Position &ndash; Clear-sky (no spoofers)&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; - Version-v13</div>\n<div>SS-27 GPS Static Multipath True Position &ndash; 1 Spoofer &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;- Version-v6</div>\n<div>SS-28 GPS Static Multipath True Position &ndash; 2 Spoofers &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; - Version-v7</div>\n<div>SS-29 GPS Static Multipath True Position &ndash; 4 Spoofers &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;- Version-v12</div>\n<div>SS-33 GPS Delayed Spoofer Injection (All PRNs Spoofed)&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;- Version-v10</div>\n</div>\n<div>&nbsp;</div>\n<div>&nbsp;</div>\n<div>\ud83d\udd2c Intended Use</div>\n<div>&nbsp;</div>\n<div>This dataset is intended for use in:</div>\n<div>&nbsp;</div>\n<div>GNSS spoofing detection research and algorithm development</div>\n<div>&nbsp;</div>\n<div>RF fingerprinting and signal classification</div>\n<div>&nbsp;</div>\n<div>GNSS receiver performance benchmarking</div>\n<div>&nbsp;</div>\n<div>Machine learning and statistical analysis of spoofed GNSS signals</div>\n<div>&nbsp;</div>\n<div>\ud83d\udef0\ufe0f Signal Type</div>\n<div>&nbsp;</div>\n<div>GPS L1 only</div>\n<div>&nbsp;</div>\n<div>\ud83d\udee0\ufe0f Equipment Used</div>\n<div>&nbsp;</div>\n<div>USRP-2945R software-defined radio front-end</div>\n<div>&nbsp;</div>\n<div>Spectracom GSG-6 GNSS signal simulator (used in spoofing scenarios only)</div>\n<div>&nbsp;</div>\n<div>\ud83d\udcc2 File Format</div>\n<div>&nbsp;</div>\n<div>.bin: Raw I/Q measurement (interleaved 32-bit float)</div>\n<div>.pdf: Scenario-specific README file</div>\n<div>&nbsp;</div>\n<div>&nbsp;</div>\n<div>\ud83d\udcda Citation</div>\n<div>&nbsp;</div>\n<div>If using this dataset, please cite this:</div>\n<div>&nbsp;</div>\n<div>\ud83d\udd04 Additional Data</div>\n<div>&nbsp;</div>\n<div>Other scenarios and dataset extensions (e.g., multipath, dynamic spoofing, false position) may be provided upon request by the authors.</div>",
+    "funding": [
+      {
+        "award": {
+          "identifiers": [
+            {
+              "identifier": "https://www.leap-re.eu/ledsol/",
+              "scheme": "url"
+            }
+          ],
+          "number": "352364",
+          "title": {
+            "en": "LEDSOL"
+          }
+        },
+        "funder": {
+          "id": "05k73zm37",
+          "name": "Research Council of Finland"
+        }
+      },
+      {
+        "award": {
+          "number": "359846",
+          "title": {
+            "en": "RESILIENT"
+          }
+        },
+        "funder": {
+          "id": "05k73zm37",
+          "name": "Research Council of Finland"
+        }
+      }
+    ],
+    "publication_date": "2025-05-15",
+    "publisher": "Zenodo",
+    "resource_type": {
+      "id": "dataset",
+      "title": {
+        "de": "Datensatz",
+        "en": "Dataset"
+      }
+    },
+    "rights": [
+      {
+        "description": {
+          "en": "The Creative Commons Attribution license allows re-distribution and re-use of a licensed work on the condition that the creator is appropriately credited."
+        },
+        "icon": "cc-by-icon",
+        "id": "cc-by-4.0",
+        "props": {
+          "scheme": "spdx",
+          "url": "https://creativecommons.org/licenses/by/4.0/legalcode"
+        },
+        "title": {
+          "en": "Creative Commons Attribution 4.0 International"
+        }
+      }
+    ],
+    "title": "Tuni2025 Datasets for GNSS - GPS Spoofing"
+  },
+  "parent": {
+    "access": {
+      "owned_by": {
+        "user": "1318843"
+      },
+      "settings": {
+        "accept_conditions_text": null,
+        "allow_guest_requests": false,
+        "allow_user_requests": false,
+        "secret_link_expiration": 0
+      }
+    },
+    "communities": {
+      "default": "c27a17d9-6d8b-466a-b75f-c3f9d54756fb",
+      "entries": [
+        {
+          "access": {
+            "member_policy": "open",
+            "members_visibility": "public",
+            "record_submission_policy": "open",
+            "review_policy": "open",
+            "visibility": "public"
+          },
+          "children": {
+            "allow": false
+          },
+          "created": "2020-04-03T07:41:24.659036+00:00",
+          "custom_fields": {},
+          "deletion_status": {
+            "is_deleted": false,
+            "status": "P"
+          },
+          "id": "c27a17d9-6d8b-466a-b75f-c3f9d54756fb",
+          "links": {},
+          "metadata": {
+            "curation_policy": "<p>At least one author to belomg to ITC-ELT at TAU</p>\r\n",
+            "description": "This is a community for research related to Wireless communications and navigation solutions performed at ITC-ELT unit of Tampere University",
+            "page": "",
+            "title": "Tampere University -Wireless communications-related research (TAU -Wireless)"
+          },
+          "revision_id": 0,
+          "slug": "tau_wireless",
+          "updated": "2020-04-03T07:41:24.659043+00:00"
+        }
+      ],
+      "ids": [
+        "c27a17d9-6d8b-466a-b75f-c3f9d54756fb"
+      ]
+    },
+    "id": "15572975",
+    "pids": {
+      "doi": {
+        "client": "datacite",
+        "identifier": "10.5281/zenodo.15572975",
+        "provider": "datacite"
+      }
+    }
+  },
+  "pids": {
+    "doi": {
+      "client": "datacite",
+      "identifier": "10.5281/zenodo.17249795",
+      "provider": "datacite"
+    },
+    "oai": {
+      "identifier": "oai:zenodo.org:17249795",
+      "provider": "oai"
+    }
+  },
+  "revision_id": 8,
+  "stats": {
+    "all_versions": {
+      "data_volume": 76029896351543.0,
+      "downloads": 4997,
+      "unique_downloads": 2788,
+      "unique_views": 3219,
+      "views": 3564
+    },
+    "this_version": {
+      "data_volume": 2969990778735.0,
+      "downloads": 198,
+      "unique_downloads": 156,
+      "unique_views": 121,
+      "views": 125
+    }
+  },
+  "status": "published",
+  "swh": {},
+  "updated": "2025-10-23T08:36:31.401153+00:00",
+  "versions": {
+    "index": 11,
+    "is_latest": false
+  }
+}
