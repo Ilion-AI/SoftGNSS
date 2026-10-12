@@ -49,7 +49,7 @@ class NavigationResult(Result):
         # Later in the code a shortest pseudorange will be selected. Therefore
         # pseudoranges from non-tracking channels must be the longest - e.g.
         # infinite.
-        travelTime = np.Inf * np.ones(settings.numberOfChannels)
+        travelTime = np.inf * np.ones(settings.numberOfChannels)
 
         # Find number of samples per spreading code
         samplesPerCode = settings.samplesPerCode
@@ -58,7 +58,7 @@ class NavigationResult(Result):
         for channelNr in channelList:
             # --- Compute the travel times -----------------------------------------
             travelTime[channelNr] = trackResults[channelNr].absoluteSample[
-                                        np.int(msOfTheSignal[channelNr])] / samplesPerCode
+                                        int(msOfTheSignal[channelNr])] / samplesPerCode
 
         # --- Truncate the travelTime and compute pseudoranges ---------------------
         minimum = np.floor(travelTime.min())
@@ -103,7 +103,7 @@ class NavigationResult(Result):
 
         if settings.msToProcess < 36000 or sum(trackResults.status != '-') < 4:
             # Show the error message and exit
-            print 'Record is to short or too few satellites tracked. Exiting!'
+            print('Record is to short or too few satellites tracked. Exiting!')
             navSolutions = None
             self._solutions = navSolutions
             eph = None
@@ -135,7 +135,7 @@ class NavigationResult(Result):
 
             # The function ephemeris expects input in binary form. In Matlab it is
             # a string array containing only "0" and "1" characters.
-            navBitsBin = map(str, navBits)
+            navBitsBin = list(map(str, navBits))
 
             eph[trackResults[channelNr].PRN - 1], TOW = ephemeris.ephemeris(navBitsBin[1:], navBitsBin[0])
 
@@ -148,7 +148,7 @@ class NavigationResult(Result):
         # Check if the number of satellites is still above 3 =====================
         if activeChnList.size == 0 or activeChnList.size < 4:
             # Show error message and exit
-            print 'Too few satellites with ephemeris data for position calculations. Exiting!'
+            print('Too few satellites with ephemeris data for position calculations. Exiting!')
             navSolutions = None
             self._solutions = navSolutions
             eph = None
@@ -161,7 +161,7 @@ class NavigationResult(Result):
         # the first calculation of receiver position. There is no reference point
         # to find the elevation angle as there is no receiver position estimate at
         # this point.
-        satElev = np.Inf * np.ones(settings.numberOfChannels)
+        satElev = np.inf * np.ones(settings.numberOfChannels)
 
         # Save the active channel list. The list contains satellites that are
         # tracked and have the required ephemeris data. In the next step the list
@@ -196,7 +196,7 @@ class NavigationResult(Result):
                                       np.nan * np.ones(64)
                                       )], formats=['O'] * 13,
                                     names='channel,DOP,X,Y,Z,dt,latitude,longitude,height,utmZone,E,N,U')
-        for currMeasNr in range(np.int(np.fix(settings.msToProcess - subFrameStart.max()) / settings.navSolPeriod)):
+        for currMeasNr in range(int(np.fix(settings.msToProcess - subFrameStart.max()) / settings.navSolPeriod)):
             # Exclude satellites, that are below elevation mask
             activeChnList = np.intersect1d((satElev >= settings.elevationMask).nonzero()[0], readyChnList)
 
@@ -263,7 +263,7 @@ class NavigationResult(Result):
 
             else:
                 # --- There are not enough satellites to find 3D position ----------
-                print '   Measurement No. %d' % currMeasNr + ': Not enough information for position solution.'
+                print('   Measurement No. %d' % currMeasNr + ': Not enough information for position solution.')
                 # excluded automatically in all plots. For DOP it is easier to use
                 # zeros. NaN values might need to be excluded from results in some
                 # of further processing to obtain correct results.
@@ -409,9 +409,7 @@ class NavigationResult(Result):
             h31.plot((navSolutions[0].E - refCoord.E).T,
                      (navSolutions[0].N - refCoord.N).T,
                      (navSolutions[0].U - refCoord.U).T, '+')
-            h31.hold(True)
             h31.plot([0], [0], [0], 'r+', lw=1.5, ms=10)
-            h31.hold(False)
             # h31.viewLim(0,90)
             h31.axis('equal')
             h31.grid(which='minor')
@@ -436,7 +434,7 @@ class NavigationResult(Result):
             h32.set_title('Sky plot (mean PDOP: %f )' % np.mean(navSolutions[0].DOP[1, :]))
             f.show()
         else:
-            print 'plotNavigation: No navigation data to plot.'
+            print('plotNavigation: No navigation data to plot.')
 
     @staticmethod
     # navPartyChk.m
@@ -627,7 +625,7 @@ class NavigationResult(Result):
                 # valid preamble and therefore nothing more can be done for it.
                 activeChnList = np.setdiff1d(activeChnList, channelNr)
 
-                print 'Could not find valid preambles in channel %2d !' % channelNr
+                print('Could not find valid preambles in channel %2d !' % channelNr)
         return firstSubFrame, activeChnList
 
 
