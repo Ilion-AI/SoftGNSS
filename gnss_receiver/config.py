@@ -179,37 +179,40 @@ def detect_data_format(bin_path: str) -> str:
     """
     logger = logging.getLogger("gnss_receiver.config")
     
-    raw = np.fromfile(bin_path, dtype=np.uint8, count=1000)
-    
-    # Try float32 first
-    data_f32 = np.frombuffer(raw.tobytes(), dtype="<f4")
-    nan_ratio = np.sum(np.isnan(data_f32)) / len(data_f32)
-    
-    if nan_ratio < 0.01:
-        # Check if values are in a reasonable range for GNSS signal
+    raw = np.fromfile(bin_path, dtype=np.uint8, count=4096)
+    if len(raw) == 0:
+        logger.warning("Empty data file; defaulting to int16")
+        return "int16"
+
+    # Little-endian float IQ samples are finite and have a nontrivial amplitude.
+    # Viewing packed integer IQ as float32 often produces tiny subnormals or
+    # enormous values, so reject those instead of misclassifying int16 captures.
+    float_bytes = raw[:len(raw) - (len(raw) % 4)]
+    data_f32 = np.frombuffer(float_bytes.tobytes(), dtype="<f4")
+    if len(data_f32):
         finite = data_f32[np.isfinite(data_f32)]
-        if len(finite) > 0 and np.abs(finite).max() < 10.0:
-            logger.info("Detected data format: float32")
-            return "float32"
-    
-    # Try int16
-    data_i16 = np.frombuffer(raw.tobytes(), dtype="<i2")
-    nonzero = data_i16[data_i16 != 0]
-    if len(nonzero) > 0:
-        max_val = np.abs(nonzero).max()
-        if max_val <= 32768:
-            logger.info("Detected data format: int16")
-            return "int16"
-    
-    # Try int8
-    data_i8 = np.frombuffer(raw.tobytes(), dtype=np.int8)
-    nonzero = data_i8[data_i8 != 0]
-    if len(nonzero) > 0:
+        if len(finite) >= 0.99 * len(data_f32):
+            amplitude = np.abs(finite)
+            max_amplitude = float(amplitude.max()) if len(amplitude) else 0.0
+            rms = float(np.sqrt(np.mean(finite.astype(np.float64) ** 2))) if len(finite) else 0.0
+            if 1e-8 < rms < 1e3 and max_amplitude < 1e3:
+                logger.info("Detected data format: float32")
+                return "float32"
+
+    # The receiver's default integer format is little-endian int16 IQ.
+    int16_bytes = raw[:len(raw) - (len(raw) % 2)]
+    data_i16 = np.frombuffer(int16_bytes.tobytes(), dtype="<i2")
+    if np.any(data_i16):
+        logger.info("Detected data format: int16")
+        return "int16"
+
+    # Fall back to int8 for low-amplitude integer captures.
+    if np.any(raw):
         logger.info("Detected data format: int8")
         return "int8"
-    
-    logger.warning("Could not auto-detect data format, defaulting to int8")
-    return "int8"
+
+    logger.warning("Could not auto-detect data format, defaulting to int16")
+    return "int16"
 
 
 def build_settings_from_args(args: argparse.Namespace) -> Settings:
@@ -254,6 +257,10 @@ def build_settings_from_args(args: argparse.Namespace) -> Settings:
     
     if args.blocks:
         settings.blocks = int(args.blocks)
+
+    settings.ms_to_process = int(args.ms_to_process)
+    settings.nav_sol_period = int(args.nav_sol_period_ms)
+    settings.number_of_channels = int(args.channels)
     
     if args.output:
         settings.output_path = args.output
@@ -277,6 +284,22 @@ def build_settings_from_args(args: argparse.Namespace) -> Settings:
         settings.data_type = detect_data_format(settings.file_name)
     
     # Validate
+    if settings.fs <= 0:
+        logger.error("Sampling frequency must be positive")
+        sys.exit(1)
+
+    if settings.ms_to_process <= 0:
+        logger.error("--ms-to-process must be positive")
+        sys.exit(1)
+
+    if settings.nav_sol_period <= 0:
+        logger.error("--nav-sol-period-ms must be positive")
+        sys.exit(1)
+
+    if not 1 <= settings.number_of_channels <= 32:
+        logger.error("--channels must be between 1 and 32")
+        sys.exit(1)
+
     if not settings.file_name:
         logger.error("No data file specified. Use --data <path>")
         sys.exit(1)
@@ -326,18 +349,18 @@ Examples:
   # Basic acquisition with auto-detected parameters
   python -m gnss_receiver --data signal.bin --json metadata.json
 
-  # Specify sampling rate and threshold
-  python -m gnss_receiver --data signal.bin --fs 50000000 --threshold 3.0
+  # Full receiver: acquisition + tracking + navigation solution
+  python -m gnss_receiver --data signal.bin --json metadata.json --data-format float32 --mode full
 
-  # Full receiver: acquisition + tracking + navigation
-  python -m gnss_receiver --data signal.bin --json metadata.json --mode full
+  # Specify sampling rate, format, duration and threshold
+  python -m gnss_receiver --data signal.bin --fs 50000000 --data-format int16 --ms-to-process 37000 --threshold 3.0
         """,
     )
     
     parser.add_argument("--data", required=True, help="Path to I/Q data file (.bin)")
     parser.add_argument("--json", help="Path to Zenodo metadata JSON file")
     parser.add_argument("--mode", choices=["acquisition", "full"], default="acquisition",
-                       help="Processing mode (default: acquisition)")
+                       help="acquisition only, or full acquisition/tracking/navigation (default: acquisition)")
     parser.add_argument("--fs", type=float, help="Sampling frequency in Hz")
     parser.add_argument("--if-freq", type=float, help="Intermediate frequency in Hz (default: 0)")
     parser.add_argument("--data-format", choices=["int8", "int16", "float32"],
@@ -357,6 +380,12 @@ Examples:
                        help="Starting sample offset in file (default: 0)")
     parser.add_argument("--blocks", type=int, default=1,
                        help="Number of 1ms blocks to process (default: 1)")
+    parser.add_argument("--ms-to-process", type=int, default=37000,
+                       help="Maximum tracking duration in ms (default: 37000; about 36 s or more is needed for navigation)")
+    parser.add_argument("--nav-sol-period-ms", type=int, default=500,
+                       help="Interval between navigation solutions in ms (default: 500)")
+    parser.add_argument("--channels", type=int, default=8,
+                       help="Maximum number of satellites to track in full mode (default: 8)")
     parser.add_argument("--output", help="Path to output JSON file")
     parser.add_argument("--save-correlation", action="store_true",
                        help="Save correlation matrices to .npy files")

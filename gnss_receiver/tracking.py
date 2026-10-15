@@ -56,7 +56,24 @@ def track_channel(
     dict or None
         Tracking results for this channel, or None if tracking fails.
     """
-    ms_to_process = int(settings.ms_to_process)
+    requested_ms = max(0, int(settings.ms_to_process))
+
+    # Acquisition's code phase is relative to the user-selected sample offset.
+    # Account for both that offset and the code phase when seeking this channel.
+    byte_offset = int(settings.skip_number_of_bytes)
+    byte_offset += (int(settings.offset) + int(channel["code_phase"])) * settings.bytes_per_iq_pair
+    current_pos = fid.tell()
+    fid.seek(0, 2)
+    file_size = fid.tell()
+    fid.seek(current_pos, 0)
+    available_bytes = max(0, file_size - byte_offset)
+    available_samples = available_bytes // settings.bytes_per_iq_pair
+    samples_per_ms = settings.fs * 1e-3
+    available_ms = int(available_samples / samples_per_ms) if samples_per_ms > 0 else 0
+    ms_to_process = min(requested_ms, available_ms)
+    if ms_to_process <= 0:
+        logger.warning("Ch %d: no samples available for tracking", channel_nr)
+        return None
     
     # DLL parameters
     early_late_spacing = settings.dll_correlator_spacing
@@ -88,9 +105,8 @@ def track_channel(
     
     prn = channel["prn"]
     
-    # Seek to the correct position in the file
-    byte_offset = settings.skip_number_of_bytes
-    byte_offset += int(channel["code_phase"]) * settings.bytes_per_iq_pair
+    # Seek to the same recording offset used by acquisition, at the acquired
+    # code phase for this PRN.
     fid.seek(byte_offset, 0)
     
     # Generate C/A code for this PRN
@@ -108,6 +124,7 @@ def track_channel(
     old_code_error = 0.0
     old_carr_nco = 0.0
     old_carr_error = 0.0
+    processed_ms = 0
     
     for loop_cnt in range(ms_to_process):
         # Progress logging
@@ -166,15 +183,7 @@ def track_channel(
         trig_arg = carr_freq_val * 2.0 * np.pi * time_vec + rem_carr_phase
         rem_carr_phase = trig_arg[blksize] % (2 * np.pi)
         
-        carr_cos = np.cos(trig_arg[:blksize])
-        carr_sin = np.sin(trig_arg[:blksize])
-        
-        # Mix to baseband
-        q_baseband = carr_cos * raw_signal.real + carr_cos * raw_signal.imag
-        i_baseband = carr_sin * raw_signal.real + carr_sin * raw_signal.imag
-        
-        # Actually for complex signal, we do:
-        # Remove carrier from complex signal
+        # Remove the residual carrier from the complex signal.
         carrier = np.exp(-1j * trig_arg[:blksize])
         baseband = raw_signal * carrier
         
@@ -186,8 +195,9 @@ def track_channel(
         i_l = np.sum(late_code * baseband.real)
         q_l = np.sum(late_code * baseband.imag)
         
-        # PLL discriminator (arctan)
-        carr_error = np.arctan2(q_p, i_p) / (2.0 * np.pi)
+        # Costas discriminator is insensitive to 180-degree GPS data-bit flips.
+        # Its output is the phase error in carrier cycles, in [-0.25, 0.25].
+        carr_error = np.arctan2(2.0 * i_p * q_p, i_p * i_p - q_p * q_p) / (4.0 * np.pi)
         
         # PLL loop filter
         carr_nco = (old_carr_nco +
@@ -215,7 +225,9 @@ def track_channel(
         code_freq_nco = CA_CHIPPING_RATE - code_nco
         
         # Store results
-        absolute_sample[loop_cnt] = fid.tell()
+        # Keep positions in complex I/Q samples (not bytes) so that code
+        # pseudoranges use the correct time scale for int8/int16/float32 data.
+        absolute_sample[loop_cnt] = fid.tell() / settings.bytes_per_iq_pair
         code_freq[loop_cnt] = code_freq_nco
         carr_freq[loop_cnt] = carr_freq_val
         I_E[loop_cnt] = i_e
@@ -228,19 +240,25 @@ def track_channel(
         dll_discr_filt[loop_cnt] = code_nco
         pll_discr[loop_cnt] = carr_error
         pll_discr_filt[loop_cnt] = carr_nco
-    
+        processed_ms = loop_cnt + 1
+
+    if processed_ms == 0:
+        return None
+
+    valid = slice(0, processed_ms)
     return {
         "status": channel["status"],
-        "absolute_sample": absolute_sample,
-        "code_freq": code_freq,
-        "carr_freq": carr_freq,
-        "I_P": I_P, "I_E": I_E, "I_L": I_L,
-        "Q_P": Q_P, "Q_E": Q_E, "Q_L": Q_L,
-        "dll_discr": dll_discr,
-        "dll_discr_filt": dll_discr_filt,
-        "pll_discr": pll_discr,
-        "pll_discr_filt": pll_discr_filt,
+        "absolute_sample": absolute_sample[valid],
+        "code_freq": code_freq[valid],
+        "carr_freq": carr_freq[valid],
+        "I_P": I_P[valid], "I_E": I_E[valid], "I_L": I_L[valid],
+        "Q_P": Q_P[valid], "Q_E": Q_E[valid], "Q_L": Q_L[valid],
+        "dll_discr": dll_discr[valid],
+        "dll_discr_filt": dll_discr_filt[valid],
+        "pll_discr": pll_discr[valid],
+        "pll_discr_filt": pll_discr_filt[valid],
         "PRN": prn,
+        "processed_ms": processed_ms,
     }
 
 

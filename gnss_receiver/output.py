@@ -400,9 +400,10 @@ def plot_tracking_results(
         logger.warning("matplotlib not available, skipping plots")
         return
     
-    time_axis = np.arange(settings.ms_to_process) / 1000.0
-    
     for ch_nr, tr in enumerate(track_results):
+        time_axis = np.arange(len(tr["I_P"])) / 1000.0
+        if len(time_axis) == 0:
+            continue
         prn = tr["PRN"]
         
         fig = plt.figure(figsize=(14, 10))

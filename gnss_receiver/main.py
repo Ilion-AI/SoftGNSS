@@ -10,6 +10,8 @@ Orchestrates the complete signal processing pipeline:
 6. Output results
 """
 
+import hashlib
+import json
 import logging
 import sys
 import time
@@ -29,7 +31,7 @@ from .output import (
     plot_correlation_2d,
     plot_tracking_results,
 )
-from .tracking import track_all_channels
+from .tracking import TrackingResult, track_all_channels
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -84,89 +86,144 @@ def run_acquisition(settings: Settings) -> 'AcquisitionResult':
     return result
 
 
+def _tracking_cache_path(settings: Settings) -> Path:
+    """Return a cache name tied to the input and tracking configuration."""
+    source = Path(settings.file_name)
+    stat = source.stat()
+    signature = {
+        "path": str(source.resolve()),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+        "fs": settings.fs,
+        "if": settings.f_if,
+        "format": settings.data_type,
+        "offset": settings.offset,
+        "skip_bytes": settings.skip_number_of_bytes,
+        "duration_ms": settings.ms_to_process,
+        "channels": settings.number_of_channels,
+        "acq_range": settings.acq_doppler_range,
+        "acq_step": settings.acq_doppler_step,
+        "acq_threshold": settings.acq_threshold,
+        "acq_prns": settings.acq_satellite_list,
+        "coherent_ms": settings.acq_coherent_ms,
+        "noncoherent": settings.acq_noncoherent,
+        "dll": [settings.dll_noise_bandwidth, settings.dll_damping_ratio,
+                settings.dll_correlator_spacing],
+        "pll": [settings.pll_noise_bandwidth, settings.pll_damping_ratio],
+    }
+    digest = hashlib.sha256(json.dumps(signature, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+    return Path(f"{source.stem}_{digest}_tracking_v2.npy")
+
+
+def _navigation_unavailable(message: str) -> dict:
+    return {"status": "unavailable", "message": message, "valid_ephemerides": [], "solutions": []}
+
+
 def run_full_receiver(settings: Settings) -> dict:
-    """
-    Run the full receiver pipeline: acquisition + tracking + navigation.
-    
-    Parameters
-    ----------
-    settings : Settings
-        Receiver settings.
-    
-    Returns
-    -------
-    dict
-        Complete results.
-    """
+    """Run acquisition, tracking, LNAV decoding, and PVT position solution."""
     logger = logging.getLogger("gnss_receiver.main")
-    
-    # Step 1: Acquisition
+
     logger.info("=" * 60)
     logger.info("STEP 1: ACQUISITION")
     logger.info("=" * 60)
-    
     acq_result = run_acquisition(settings)
-    
-    if len(acq_result.detected_prns) == 0:
-        logger.error("No satellites detected. Cannot proceed to tracking.")
-        return {"acquisition": format_acquisition_json(acq_result)}
-    
-    # Step 2: Prepare channels for tracking
+    if not acq_result.detected_prns:
+        message = "No GPS satellites were acquired; no navigation solution is possible."
+        logger.error(message)
+        return {
+            "acquisition": format_acquisition_json(acq_result),
+            "tracking_channels": 0,
+            "navigation": _navigation_unavailable(message),
+        }
+
     logger.info("")
     logger.info("=" * 60)
     logger.info("STEP 2: PREPARING TRACKING CHANNELS")
     logger.info("=" * 60)
-    
-    channels = prepare_for_tracking(
-        acq_result,
-        max_channels=settings.number_of_channels,
+    channels = prepare_for_tracking(acq_result, max_channels=settings.number_of_channels)
+    if not channels:
+        message = "No channels were prepared for tracking; no navigation solution is possible."
+        logger.error(message)
+        return {
+            "acquisition": format_acquisition_json(acq_result),
+            "tracking_channels": 0,
+            "navigation": _navigation_unavailable(message),
+        }
+
+    # Do not allocate/traverse more tracking epochs than the file actually has.
+    file_info = get_file_info(settings)
+    first_sample_byte = int(settings.skip_number_of_bytes) + int(settings.offset) * settings.bytes_per_iq_pair
+    available_samples = max(
+        0,
+        (int(file_info["file_size_bytes"]) - first_sample_byte) // settings.bytes_per_iq_pair,
     )
-    
-    if len(channels) == 0:
-        logger.error("No channels prepared for tracking.")
-        return {"acquisition": format_acquisition_json(acq_result)}
-    
-    # Step 3: Tracking
+    available_ms = int(available_samples / settings.fs * 1000.0)
+    requested_ms = int(settings.ms_to_process)
+    settings.ms_to_process = min(requested_ms, available_ms)
+    logger.info(
+        "Tracking up to %d ms (requested %d ms; file has %.1f ms after the selected offset)",
+        int(settings.ms_to_process), requested_ms, available_samples / settings.fs * 1000.0,
+    )
+    if settings.ms_to_process < 30_000:
+        logger.warning(
+            "This recording is shorter than the 30-second GPS ephemeris block; "
+            "navigation may not produce coordinates."
+        )
+
     logger.info("")
     logger.info("=" * 60)
     logger.info("STEP 3: TRACKING")
     logger.info("=" * 60)
-    
-    # Try to load cached tracking results
-    cache_path = Path(settings.file_name).stem + "_tracking_cache.npy"
-    
     track_result = None
-    if Path(cache_path).exists():
+    cache_path = _tracking_cache_path(settings)
+    if cache_path.exists():
         try:
-            logger.info(f"Loading cached tracking results from {cache_path}")
+            logger.info("Loading cached tracking results from %s", cache_path)
             cached = np.load(cache_path, allow_pickle=True)
-            track_result = type('TrackingResult', (), {
-                'results': cached.tolist() if hasattr(cached, 'tolist') else list(cached),
-                'channels': channels,
-                'settings': settings,
-            })()
-        except Exception as e:
-            logger.warning(f"Could not load cached results: {e}")
-    
+            cached_results = cached.tolist() if hasattr(cached, "tolist") else list(cached)
+            if all("absolute_sample" in item and "I_P" in item for item in cached_results):
+                track_result = TrackingResult(settings)
+                track_result.channels = channels
+                track_result.results = cached_results
+            else:
+                logger.warning("Ignoring tracking cache with an incompatible result format")
+        except Exception as error:
+            logger.warning("Could not load tracking cache: %s", error)
+
     if track_result is None:
         track_result = track_all_channels(channels, settings, settings.file_name)
-        
-        # Save tracking results to cache
         try:
             np.save(cache_path, np.array(track_result.results, dtype=object))
-            logger.info(f"Tracking results cached to {cache_path}")
-        except Exception as e:
-            logger.warning(f"Could not cache tracking results: {e}")
-    
-    # Step 4: Plot tracking results
+            logger.info("Tracking results cached to %s", cache_path)
+        except Exception as error:
+            logger.warning("Could not cache tracking results: %s", error)
+
     if settings.plot_tracking and track_result.results:
         plot_dir = Path(settings.file_name).stem + "_plots"
         Path(plot_dir).mkdir(exist_ok=True)
         plot_tracking_results(track_result.results, settings, save_dir=str(plot_dir))
-    
+
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("STEP 4: NAVIGATION MESSAGE AND POSITION")
+    logger.info("=" * 60)
+    from .pvt import solve_navigation
+
+    navigation = solve_navigation(track_result, settings)
+    logger.info("%s", navigation["message"])
+    if navigation["status"] == "solved":
+        latest = navigation["solutions"][-1]
+        logger.info(
+            "Latest fix: lat %.8f°, lon %.8f°, h %.2f m; %d satellites; PDOP %.2f",
+            latest["latitude_deg"], latest["longitude_deg"], latest["height_m"],
+            latest["satellite_count"], latest["dop"]["pdop"],
+        )
+
     return {
         "acquisition": format_acquisition_json(acq_result),
-        "tracking_channels": len(track_result.results) if track_result else 0,
+        "tracking_channels": len(track_result.results),
+        "tracking_duration_ms": int(settings.ms_to_process),
+        "navigation": navigation,
     }
 
 
@@ -204,7 +261,8 @@ def main() -> int:
     # Set default output path
     if not settings.output_path:
         stem = Path(settings.file_name).stem
-        settings.output_path = f"{stem}_acquisition_results.json"
+        suffix = "navigation_results" if args.mode == "full" else "acquisition_results"
+        settings.output_path = f"{stem}_{suffix}.json"
     
     t_start = time.time()
     
@@ -250,13 +308,11 @@ def main() -> int:
             exit_code = 0 if len(acq_result.detected_prns) > 0 else 1
         
         elif args.mode == "full":
-            # Full receiver pipeline
+            # Acquisition + tracking + broadcast navigation/PVT.
             results = run_full_receiver(settings)
-            
-            # Save results
             save_json(results, settings.output_path)
-            
-            exit_code = 0
+            navigation = results.get("navigation", {})
+            exit_code = 0 if navigation.get("status") == "solved" else 1
         
         else:
             logger.error(f"Unknown mode: {args.mode}")

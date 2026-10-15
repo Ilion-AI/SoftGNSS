@@ -24,7 +24,8 @@ SoftGNSS/
 │   ├── detection.py        # Адаптивный порог: SNR = (peak − μ) / σ
 │   ├── acquisition.py      # Обнаружение (PCPS, когерентное/некогерентное)
 │   ├── tracking.py         # Слежение (DLL + PLL)
-│   ├── nav_decoder.py      # Декодирование эфемерид и TOW
+│   ├── nav_decoder.py      # Синхронизация LNAV и декодирование эфемерид
+│   ├── pvt.py              # Псевдодальности, спутниковые орбиты и расчёт координат
 │   ├── output.py           # Таблицы, JSON, CSV, matplotlib-графики
 │   ├── main.py             # Оркестрация: acquisition → tracking
 │   └── __main__.py         # Точка входа: python -m gnss_receiver
@@ -77,11 +78,22 @@ python -m gnss_receiver `
   --output results.json
 ```
 
-### Полный пайплайн (обнаружение + слежение)
+### Полный пайплайн с навигационным решением (координаты)
 
 ```bash
-python -m gnss_receiver --data Clearsky_signal_C_-7_crop.bin --json Info_about_dataset.json --data-format int16 --mode full --plot
+python -m gnss_receiver \
+  --data path/to/record.bin \
+  --json Info_about_dataset.json \
+  --data-format float32 \
+  --mode full \
+  --ms-to-process 37000 \
+  --nav-sol-period-ms 500 \
+  --output position.json
 ```
+
+Режим `full` выполняет acquisition, tracking, декодирование GPS LNAV-эфемерид и расчёт PVT. В JSON будут координаты WGS-84 (широта, долгота, высота и ECEF), DOP и список спутников для каждой эпохи. Нужны минимум 4 спутника с корректными эфемеридами и обычно не менее 36 секунд непрерывной записи; полный файл датасета — interleaved `float32`, приложенный crop — `int16` и слишком короткий для навигационного решения.
+
+Для короткого crop можно запустить обнаружение спутников, но в `full` координаты будут помечены как недоступные, если данных недостаточно.
 
 ### Оригинальный пайплайн (Settings → acquire → track)
 
@@ -162,7 +174,7 @@ python -m gnss_receiver --data <файл> [опции]
 |--------------------|--------------|-----------------------------------------------|
 | `--data`           | —            | Путь к .bin файлу (обязательно)               |
 | `--json`           | —            | Путь к Zenodo JSON (извлекает fs)             |
-| `--mode`           | `acquisition`| `acquisition` или `full` (acq + tracking)     |
+| `--mode`           | `acquisition`| `acquisition` или `full` (acq + tracking + PVT) |
 | `--fs`             | 50000000     | Частота дискретизации, Гц                     |
 | `--if-freq`        | 0            | Промежуточная частота, Гц                     |
 | `--data-format`    | авто         | `int8`, `int16`, `float32`                    |
@@ -172,8 +184,11 @@ python -m gnss_receiver --data <файл> [опции]
 | `--coherent-ms`    | 1            | Когерентное накопление, мс                    |
 | `--noncoherent`    | 1            | Некогерентные суммирования                    |
 | `--prn`            | 1-32         | Список PRN через запятую                      |
-| `--offset`         | 0            | Начальный отсчёт                              |
-| `--output`         | авто         | Путь к выходному JSON (CSV — рядом, .csv)     |
+| `--offset`         | 0            | Начальный комплексный отсчёт                  |
+| `--ms-to-process`  | 37000        | Максимальная длительность слежения, мс         |
+| `--nav-sol-period-ms` | 500        | Интервал между решениями, мс                  |
+| `--channels`       | 8            | Максимум спутниковых каналов в режиме full    |
+| `--output`         | авто         | Путь к выходному JSON                        |
 | `--save-correlation| —            | Сохранить корреляционные матрицы (.npy)       |
 | `--plot`           | —            | Сохранить графики (PNG)                       |
 | `--log-level`      | `INFO`       | `ERROR`, `WARNING`, `INFO`, `DEBUG`           |
@@ -203,7 +218,7 @@ python -m gnss_receiver --data <файл> [опции]
 ## Алгоритм слежения (Tracking)
 
 Для каждого обнаруженного спутника:
-- **PLL** (Phase Lock Loop): отслеживание несущей, арктангенс-дискриминатор `arctan(Q_P / I_P)`
+- **PLL** (Phase Lock Loop): Costas-дискриминатор, устойчивый к 180° инверсии навигационных битов
 - **DLL** (Delay Lock Loop): отслеживание кода, нормированный Early-Minus-Late
 
 ---
