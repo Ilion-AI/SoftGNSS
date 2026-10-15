@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Generated files
+*_plots/
+*_tracking_cache.npy
+*_acquisition_results.json
+acquisition_results.json
+*.npy
+
+# OS
+.DS_Store
+Thumbs.db

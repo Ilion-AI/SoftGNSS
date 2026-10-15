@@ -96,17 +96,21 @@ class Settings(object):
         # Raw signal file name and other parameter ===============================
         # This is a "default" name of the data file (signal record) to be used in
         # the post-processing mode
-        self.fileName = '/Users/yangsu/Downloads/GNSS_signal_records/GPSdata-DiscreteComponents-fs38_192-if9_55.bin'
+        self.fileName = 'Clearsky_signal_C_-7_crop.bin'
 
         # Data type used to store one sample
-        self.dataType = 'int8'
+        self.dataType = np.dtype('<i2')  # int16 little-endian
 
         # Intermediate, sampling and code frequencies
-        self.IF = 9548000.0
+        self.IF = 0.0  # baseband I/Q
 
-        self.samplingFreq = 38192000.0
+        self.samplingFreq = 50000000.0
 
         self.codeFreqBasis = 1023000.0
+
+        # Flag: True = interleaved I/Q data (int16, baseband)
+        #       False = real-valued samples with non-zero IF (legacy int8)
+        self.isComplexIQ = True
 
         # Define number of chips in a code period
         self.codeLength = 1023
@@ -182,7 +186,26 @@ class Settings(object):
 
     @property
     def samplesPerCode(self):
-        return np.long(np.round(self.samplingFreq / (self.codeFreqBasis / self.codeLength)))
+        return int(np.round(self.samplingFreq / (self.codeFreqBasis / self.codeLength)))
+
+    @property
+    def bytesPerSample(self):
+        """Bytes per one scalar sample."""
+        return np.dtype(self.dataType).itemsize
+
+    def readComplexSignal(self, fid, numSamples):
+        """Read numSamples complex I/Q samples from an open file."""
+        if self.isComplexIQ:
+            raw = np.fromfile(fid, self.dataType, 2 * numSamples)
+            if len(raw) < 2:
+                return np.array([], dtype=np.complex128)
+            raw = raw[: (len(raw) // 2) * 2]
+            iq = raw.reshape(-1, 2)
+            signal = iq[:, 0].astype(np.float64) + 1j * iq[:, 1].astype(np.float64)
+        else:
+            raw = np.fromfile(fid, self.dataType, numSamples)
+            signal = raw.astype(np.float64) + 0j
+        return signal
 
     # makeCaTable.m
     def makeCaTable(self):
@@ -221,7 +244,7 @@ class Settings(object):
             # number of samples per millisecond (because one C/A code period is one
             # millisecond).
             codeValueIndex = np.ceil(ts * np.arange(1, samplesPerCode + 1) / tc) - 1
-            codeValueIndex = np.longlong(codeValueIndex)
+            codeValueIndex = np.int64(codeValueIndex)
 
             codeValueIndex[-1] = 1022
 
@@ -331,7 +354,7 @@ class Settings(object):
 
         import matplotlib.pyplot as plt
         from scipy.signal import welch
-        from scipy.signal.windows.windows import hamming
+        from scipy.signal.windows import hamming
 
         # Function plots raw data information: time domain plot, a frequency domain
         # plot and a histogram.
@@ -372,7 +395,7 @@ class Settings(object):
 
                 except IOError:
                     # The file is too short
-                    print 'Could not read enough data from the data file.'
+                    print('Could not read enough data from the data file.')
                 # --- Initialization ---------------------------------------------------
                 plt.figure(100)
                 plt.clf()
@@ -414,7 +437,7 @@ class Settings(object):
                 plt.ylabel('Number in bin')
             # === Error while opening the data file ================================
         except IOError as e:
-            print 'Unable to read file "%s": %s' % (fileNameStr, e)
+            print('Unable to read file "%s": %s' % (fileNameStr, e))
 
     # ./postProcessing.m
 
@@ -456,7 +479,7 @@ class Settings(object):
         import acquisition
         import postNavigation
         import tracking
-        print 'Starting processing...'
+        print('Starting processing...')
         settings = self
         if not fileNameStr:
             fileNameStr = settings.fileName
@@ -480,7 +503,7 @@ class Settings(object):
                     # frequency estimation
                     data = np.fromfile(fid, settings.dataType, 11 * samplesPerCode)
 
-                    print '   Acquiring satellites...'
+                    print('   Acquiring satellites...')
                     acqResults = acquisition.AcquisitionResult(settings)
                     acqResults.acquire(data)
                     acqResults.plot()
@@ -492,13 +515,13 @@ class Settings(object):
                     acqResults.showChannelStatus()
                 else:
                     # No satellites to track, exit
-                    print 'No GNSS signals detected, signal processing finished.'
+                    print('No GNSS signals detected, signal processing finished.')
                     trackResults = None
 
                 # Track the signal =======================================================
                 startTime = datetime.datetime.now()
 
-                print '   Tracking started at %s' % startTime.strftime('%X')
+                print('   Tracking started at %s' % startTime.strftime('%X'))
                 trackResults = tracking.TrackingResult(acqResults)
                 try:
                     trackResults.results = np.load('trackingResults_python.npy')
@@ -506,22 +529,22 @@ class Settings(object):
                     trackResults.track(fid)
                     np.save('trackingResults_python', trackResults.results)
 
-                print '   Tracking is over (elapsed time %s s)' % (datetime.datetime.now() - startTime).total_seconds()
+                print('   Tracking is over (elapsed time %s s)' % (datetime.datetime.now() - startTime).total_seconds())
                 # Auto save the acquisition & tracking results to save time.
-                print '   Saving Acquisition & Tracking results to storage'
+                print('   Saving Acquisition & Tracking results to storage')
                 # Calculate navigation solutions =========================================
-                print '   Calculating navigation solutions...'
+                print('   Calculating navigation solutions...')
                 navResults = postNavigation.NavigationResult(trackResults)
                 navResults.postNavigate()
 
-                print '   Processing is complete for this data block'
+                print('   Processing is complete for this data block')
                 # Plot all results ===================================================
-                print '   Plotting results...'
+                print('   Plotting results...')
                 # TODO turn off tracking plots for now
                 if not settings.plotTracking:
                     trackResults.plot()
                 navResults.plot()
-                print 'Post processing of the signal is over.'
+                print('Post processing of the signal is over.')
         except IOError as e:
             # Error while opening the data file.
-            print 'Unable to read file "%s": %s.' % (settings.fileName, e)
+            print('Unable to read file "%s": %s.' % (settings.fileName, e))

@@ -25,181 +25,117 @@ class AcquisitionResult(Result):
         return self._results.codePhase
 
     def acquire(self, longSignal):
-        # ./acquisition.m
-        # Function performs cold start acquisition on the collected "data". It
-        # searches for GPS signals of all satellites, which are listed in field
-        # "acqSatelliteList" in the settings structure. Function saves code phase
-        # and frequency of the detected signals in the "acqResults" structure.
+        """Parallel Code Phase Search acquisition.
 
-        # acqResults = acquisition(longSignal, settings)
-
-        #   Inputs:
-        #       longSignal    - 11 ms of raw signal from the front-end
-        #       settings      - Receiver settings. Provides information about
-        #                       sampling and intermediate frequencies and other
-        #                       parameters including the list of the satellites to
-        #                       be acquired.
-        #   Outputs:
-        #       acqResults    - Function saves code phases and frequencies of the
-        #                       detected signals in the "acqResults" structure. The
-        #                       field "carrFreq" is set to 0 if the signal is not
-        #                       detected for the given PRN number.
-
-        # Initialization =========================================================
+        Works with complex baseband I/Q (isComplexIQ=True, IF=0)
+        and legacy real-valued IF signals (isComplexIQ=False).
+        """
         settings = self._settings
-
-        # Find number of samples per spreading code
         samplesPerCode = settings.samplesPerCode
-
-        # Create two 1m sec vectors of data to correlate with and one with zero DC
-        signal1 = longSignal[0:samplesPerCode]
-
-        signal2 = longSignal[samplesPerCode:2 * samplesPerCode]
-
-        signal0DC = longSignal - longSignal.mean()
-
-        # Find sampling period
         ts = 1.0 / settings.samplingFreq
+        isIQ = getattr(settings, 'isComplexIQ', False)
 
-        # Find phase points of the local carrier wave
-        phasePoints = np.arange(samplesPerCode) * 2 * np.pi * ts
-
-        # Number of the frequency bins for the given acquisition band (500Hz steps)
-        numberOfFrqBins = np.int(np.round(settings.acqSearchBand * 2) + 1)
-
-        # Generate all C/A codes and sample them according to the sampling freq.
+        numberOfFrqBins = int(np.round(settings.acqSearchBand * 2) + 1)
         caCodesTable = settings.makeCaTable()
 
-        # --- Initialize arrays to speed up the code -------------------------------
-        # Search results of all frequency bins and code shifts (for one satellite)
         results = np.zeros((numberOfFrqBins, samplesPerCode))
-
-        # Carrier frequencies of the frequency bins
         frqBins = np.zeros(numberOfFrqBins)
-
-        # --- Initialize acqResults ------------------------------------------------
-        # Carrier frequencies of detected signals
-        carrFreq = np.zeros(32)
-
-        # C/A code phases of detected signals
+        carrFreq   = np.zeros(32)
         codePhase_ = np.zeros(32)
-
-        # Correlation peak ratios of the detected signals
         peakMetric = np.zeros(32)
 
-        print '('
-        # Perform search for all listed PRN numbers ...
+        if isIQ:
+            signal0DC = longSignal - longSignal.mean()
+            sig1 = signal0DC[0:samplesPerCode]
+            sig2 = signal0DC[samplesPerCode:2 * samplesPerCode]
+            t_one_ms = np.arange(samplesPerCode) * ts
+        else:
+            sig1 = longSignal[0:samplesPerCode]
+            sig2 = longSignal[samplesPerCode:2 * samplesPerCode]
+            signal0DC = longSignal - longSignal.mean()
+            phasePoints = np.arange(samplesPerCode) * 2 * np.pi * ts
+
+        samplesPerCodeChip = int(round(settings.samplingFreq / settings.codeFreqBasis))
+
+        print('(')
         for PRN in range(len(settings.acqSatelliteList)):
-            # Correlate signals ======================================================
-            # --- Perform DFT of C/A code ------------------------------------------
             caCodeFreqDom = np.fft.fft(caCodesTable[PRN, :]).conj()
 
             for frqBinIndex in range(numberOfFrqBins):
-                # --- Generate carrier wave frequency grid (0.5kHz step) -----------
-                frqBins[frqBinIndex] = settings.IF - \
-                                       settings.acqSearchBand / 2 * 1000 + \
-                                       500.0 * frqBinIndex
+                frqBins[frqBinIndex] = (settings.IF
+                                        - settings.acqSearchBand / 2 * 1000
+                                        + 500.0 * frqBinIndex)
+                fd = frqBins[frqBinIndex]
 
-                sinCarr = np.sin(frqBins[frqBinIndex] * phasePoints)
+                if isIQ:
+                    carrier = np.exp(-1j * 2 * np.pi * fd * t_one_ms)
+                    bb1 = sig1 * carrier
+                    bb2 = sig2 * carrier
+                    acqRes1 = np.abs(np.fft.ifft(np.fft.fft(bb1) * caCodeFreqDom)) ** 2
+                    acqRes2 = np.abs(np.fft.ifft(np.fft.fft(bb2) * caCodeFreqDom)) ** 2
+                else:
+                    sinCarr = np.sin(fd * phasePoints)
+                    cosCarr = np.cos(fd * phasePoints)
+                    IQ1 = sinCarr * sig1 + 1j * cosCarr * sig1
+                    IQ2 = sinCarr * sig2 + 1j * cosCarr * sig2
+                    acqRes1 = np.abs(np.fft.ifft(np.fft.fft(IQ1) * caCodeFreqDom)) ** 2
+                    acqRes2 = np.abs(np.fft.ifft(np.fft.fft(IQ2) * caCodeFreqDom)) ** 2
 
-                cosCarr = np.cos(frqBins[frqBinIndex] * phasePoints)
-
-                I1 = sinCarr * signal1
-
-                Q1 = cosCarr * signal1
-
-                I2 = sinCarr * signal2
-
-                Q2 = cosCarr * signal2
-
-                IQfreqDom1 = np.fft.fft(I1 + 1j * Q1)
-
-                IQfreqDom2 = np.fft.fft(I2 + 1j * Q2)
-
-                # domain)
-                convCodeIQ1 = IQfreqDom1 * caCodeFreqDom
-
-                convCodeIQ2 = IQfreqDom2 * caCodeFreqDom
-
-                acqRes1 = abs(np.fft.ifft(convCodeIQ1)) ** 2
-
-                acqRes2 = abs(np.fft.ifft(convCodeIQ2)) ** 2
-
-                # "blend" 1st and 2nd msec but will correct data bit issues
                 if acqRes1.max() > acqRes2.max():
                     results[frqBinIndex, :] = acqRes1
-
                 else:
                     results[frqBinIndex, :] = acqRes2
 
-            # Look for correlation peaks in the results ==============================
-            # Find the highest peak and compare it to the second highest peak
-            # The second peak is chosen not closer than 1 chip to the highest peak
-            # --- Find the correlation peak and the carrier frequency --------------
-            peakSize = results.max(1).max()
-            frequencyBinIndex = results.max(1).argmax()
+            # SNR-based detection
+            peak_idx = np.unravel_index(results.argmax(), results.shape)
+            peak_fd_bin = peak_idx[0]
+            codePhase = peak_idx[1]
+            peakSize = results[peak_fd_bin, codePhase]
 
-            peakSize = results.max(0).max()
-            codePhase = results.max(0).argmax()
-
-            samplesPerCodeChip = long(round(settings.samplingFreq / settings.codeFreqBasis))
-
-            excludeRangeIndex1 = codePhase - samplesPerCodeChip
-
-            excludeRangeIndex2 = codePhase + samplesPerCodeChip
-
-            # boundaries
-            if excludeRangeIndex1 <= 0:
-                codePhaseRange = np.r_[excludeRangeIndex2:samplesPerCode + excludeRangeIndex1 + 1]
-
-            elif excludeRangeIndex2 >= samplesPerCode - 1:
-                codePhaseRange = np.r_[excludeRangeIndex2 - samplesPerCode:excludeRangeIndex1]
-
+            mask = np.ones(samplesPerCode, dtype=bool)
+            excl1 = codePhase - samplesPerCodeChip
+            excl2 = codePhase + samplesPerCodeChip
+            if excl1 <= 0:
+                mask[excl2:samplesPerCode + excl1 + 1] = False
+            elif excl2 >= samplesPerCode - 1:
+                mask[excl2 - samplesPerCode:excl1] = False
             else:
-                codePhaseRange = np.r_[0:excludeRangeIndex1 + 1, excludeRangeIndex2:samplesPerCode]
+                mask[:excl1 + 1] = False
+                mask[excl2:] = False
 
-            # --- Find the second highest correlation peak in the same freq. bin ---
-            secondPeakSize = results[frequencyBinIndex, codePhaseRange].max()
+            noise_vals = results[peak_fd_bin, mask]
+            noise_mean = noise_vals.mean()
+            noise_std  = noise_vals.std()
+            snr = (peakSize - noise_mean) / noise_std if noise_std > 0 else 0.0
+            peakMetric[PRN] = snr
 
-            peakMetric[PRN] = peakSize / secondPeakSize
-
-            if (peakSize / secondPeakSize) > settings.acqThreshold:
-                # Fine resolution frequency search =======================================
-                # --- Indicate PRN number of the detected signal -------------------
-                print '%02d ' % (PRN + 1)
-                caCode = settings.generateCAcode(PRN)
-
-                codeValueIndex = np.floor(ts * np.arange(1, 10 * samplesPerCode + 1) / (1.0 / settings.codeFreqBasis))
-
-                longCaCode = caCode[np.longlong(codeValueIndex % 1023)]
-
-                # (Using detected C/A code phase)
-                xCarrier = signal0DC[codePhase:codePhase + 10 * samplesPerCode] * longCaCode
-
-                fftNumPts = 8 * 2 ** (np.ceil(np.log2(len(xCarrier))))
-
-                # associated carrier frequency
-                fftxc = np.abs(np.fft.fft(xCarrier, np.long(fftNumPts)))
-
-                uniqFftPts = np.long(np.ceil((fftNumPts + 1) / 2.0))
-
-                fftMax = fftxc[4:uniqFftPts - 5].max()
-                fftMaxIndex = fftxc[4:uniqFftPts - 5].argmax()
-
-                fftFreqBins = np.arange(uniqFftPts) * settings.samplingFreq / fftNumPts
-
-                carrFreq[PRN] = fftFreqBins[fftMaxIndex]
-
+            if snr > settings.acqThreshold:
+                print('%02d ' % (PRN + 1))
+                if isIQ:
+                    carrFreq[PRN] = frqBins[peak_fd_bin]
+                else:
+                    caCode = settings.generateCAcode(PRN)
+                    codeValueIndex = np.floor(
+                        ts * np.arange(1, 10 * samplesPerCode + 1)
+                        / (1.0 / settings.codeFreqBasis)
+                    ).astype(np.int64)
+                    longCaCode = caCode[codeValueIndex % 1023]
+                    xCarrier = (signal0DC[codePhase:codePhase + 10 * samplesPerCode]
+                                * longCaCode)
+                    fftNumPts = int(8 * 2 ** np.ceil(np.log2(len(xCarrier))))
+                    fftxc = np.abs(np.fft.fft(xCarrier, fftNumPts))
+                    uniqFftPts = int(np.ceil((fftNumPts + 1) / 2.0))
+                    fftMaxIndex = fftxc[4:uniqFftPts - 5].argmax()
+                    fftFreqBins = np.arange(uniqFftPts) * settings.samplingFreq / fftNumPts
+                    carrFreq[PRN] = fftFreqBins[fftMaxIndex]
                 codePhase_[PRN] = codePhase
-
             else:
-                # --- No signal with this PRN --------------------------------------
-                print '. '
+                print('. ')
 
-        # === Acquisition is over ==================================================
-        print ')\n'
-        acqResults = np.core.records.fromarrays([carrFreq, codePhase_, peakMetric],
-                                                names='carrFreq,codePhase,peakMetric')
+        print(')\n')
+        acqResults = np.core.records.fromarrays(
+            [carrFreq, codePhase_, peakMetric],
+            names='carrFreq,codePhase,peakMetric')
         self._results = acqResults
         return
 
@@ -207,12 +143,8 @@ class AcquisitionResult(Result):
         assert isinstance(self._results, np.recarray)
         import matplotlib as mpl
         import matplotlib.pyplot as plt
-        # from scipy.io.matlab import loadmat
 
-        # %% configure matplotlib
         mpl.rcdefaults()
-        # mpl.rcParams['font.sans-serif']
-        # mpl.rcParams['font.family'] = 'serif'
         mpl.rc('savefig', bbox='tight', transparent=False, format='png')
         mpl.rc('axes', grid=True, linewidth=1.5, axisbelow=True)
         mpl.rc('lines', linewidth=1.5, solid_joinstyle='bevel')
@@ -221,119 +153,68 @@ class AcquisitionResult(Result):
         mpl.rc('font', family='serif', serif='Computer Modern Roman', size=16)
         mpl.rc('mathtext', fontset='cm')
 
-        # mpl.rc('font', size=16)
-        # mpl.rc('text.latex', preamble=r'\usepackage{cmbright}')
-
-        # ./plotAcquisition.m
-        # Functions plots bar plot of acquisition results (acquisition metrics). No
-        # bars are shown for the satellites not included in the acquisition list (in
-        # structure SETTINGS).
-
-        # plotAcquisition(acqResults)
-
-        #   Inputs:
-        #       acqResults    - Acquisition results from function acquisition.
-
-        # Plot all results =======================================================
         f, hAxes = plt.subplots()
-
         plt.bar(range(1, 33), self.peakMetric)
         plt.title('Acquisition results')
-        plt.xlabel('PRN number (no bar - SV is not in the acquisition list)')
-        plt.ylabel('Acquisition Metric ($1^{st}$ to $2^{nd}$ Correlation Peaks Ratio')
+        plt.xlabel('PRN number')
+        plt.ylabel('Acquisition Metric (SNR)')
         oldAxis = plt.axis()
-
         plt.axis([0, 33, 0, oldAxis[-1]])
         plt.xticks(range(1, 33), size=12)
-        # plt.minorticks_on()
         hAxes.xaxis.grid()
-        # Mark acquired signals ==================================================
-
         acquiredSignals = self.peakMetric * (self.carrFreq > 0)
-
         plt.bar(range(1, 33), acquiredSignals, FaceColor=(0, 0.8, 0))
         plt.legend(['Not acquired signals', 'Acquired signals'])
         plt.show()
 
-    # preRun.m
     def preRun(self):
         assert isinstance(self._results, np.recarray)
-        # Function initializes tracking channels from acquisition data. The acquired
-        # signals are sorted according to the signal strength. This function can be
-        # modified to use other satellite selection algorithms or to introduce
-        # acquired signal properties offsets for testing purposes.
-
-        # [channel] = preRun(acqResults, settings)
-
-        #   Inputs:
-        #       acqResults  - results from acquisition.
-        #       settings    - receiver settings
-
-        #   Outputs:
-        #       channel     - structure contains information for each channel (like
-        #                   properties of the tracked signal, channel status etc.).
-
         settings = self._settings
-        # Initialize all channels ================================================
+
         PRN = np.zeros(settings.numberOfChannels, dtype='int64')
         acquiredFreq = np.zeros(settings.numberOfChannels)
         codePhase = np.zeros(settings.numberOfChannels)
         status = ['-' for _ in range(settings.numberOfChannels)]
 
-        # --- Copy initial data to all channels ------------------------------------
-
-        # Copy acquisition results ===============================================
-
-        # --- Sort peaks to find strongest signals, keep the peak index information
         PRNindexes = sorted(enumerate(self.peakMetric),
                             key=lambda x: x[-1], reverse=True)
 
-        # --- Load information about each satellite --------------------------------
-        # Maximum number of initialized channels is number of detected signals, but
-        # not more as the number of channels specified in the settings.
-        for ii in range(min(settings.numberOfChannels, sum(self.carrFreq > 0))):
-            PRN[ii] = PRNindexes[ii][0] + 1
+        ii = 0
+        for idx, _ in PRNindexes:
+            if ii >= settings.numberOfChannels:
+                break
+            if self.carrFreq[idx] > 0:
+                PRN[ii] = idx + 1
+                acquiredFreq[ii] = self.carrFreq[idx]
+                codePhase[ii] = self.codePhase[idx]
+                status[ii] = 'T'
+                ii += 1
 
-            acquiredFreq[ii] = self.carrFreq[PRNindexes[ii][0]]
-
-            codePhase[ii] = self.codePhase[PRNindexes[ii][0]]
-
-            status[ii] = 'T'
-
-        channel = np.core.records.fromarrays([PRN, acquiredFreq, codePhase, status],
-                                             names='PRN,acquiredFreq,codePhase,status')
+        channel = np.core.records.fromarrays(
+            [PRN, acquiredFreq, codePhase, status],
+            names='PRN,acquiredFreq,codePhase,status')
         self._channels = channel
         return
 
     def showChannelStatus(self):
-        # Prints the status of all channels in a table.
-
-        # showChannelStatus(channel, settings)
-
-        #   Inputs:
-        #       channel     - data for each channel. It is used to initialize and
-        #                   at the processing of the signal (tracking part).
-        #       settings    - receiver settings
-
         channel = self._channels
         settings = self._settings
         assert isinstance(channel, np.recarray)
-        print ('\n*=========*=====*===============*===========*=============*========*')
-        print ('| Channel | PRN |   Frequency   |  Doppler  | Code Offset | Status |')
-        print ('*=========*=====*===============*===========*=============*========*')
+        print('\n*=========*=====*===============*===========*=============*========*')
+        print('| Channel | PRN |   Frequency   |  Doppler  | Code Offset | Status |')
+        print('*=========*=====*===============*===========*=============*========*')
         for channelNr in range(settings.numberOfChannels):
             if channel[channelNr].status != '-':
-                print '|      %2d | %3d |  %2.5e |   %5.0f   |    %6d   |     %1s  |' % (
+                print('|      %2d | %3d |  %2.5e |   %5.0f   |    %6d   |     %1s  |' % (
                     channelNr,
                     channel[channelNr].PRN,
                     channel[channelNr].acquiredFreq,
                     channel[channelNr].acquiredFreq - settings.IF,
                     channel[channelNr].codePhase,
-                    channel[channelNr].status)
+                    channel[channelNr].status))
             else:
-                print '|      %2d | --- |  ------------ |   -----   |    ------   |   Off  |' % channelNr
-
-        print '*=========*=====*===============*===========*=============*========*\n'
+                print('|      %2d | --- |  ------------ |   -----   |    ------   |   Off  |' % channelNr)
+        print('*=========*=====*===============*===========*=============*========*\n')
 
 
 if __name__ == '__main__':
