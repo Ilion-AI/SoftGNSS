@@ -7,7 +7,11 @@ import numpy as np
 
 from geoFunctions import e_r_corr
 from gnss_receiver.config import C, Settings, detect_data_format
-from gnss_receiver.nav_decoder import decode_ephemeris_from_tracking
+from gnss_receiver.nav_decoder import (
+    decode_ephemeris_from_tracking,
+    find_nav_preambles,
+    nav_party_check,
+)
 from gnss_receiver.pvt import ecef_to_geodetic, least_squares_position, solve_navigation
 
 
@@ -53,6 +57,84 @@ class NavigationTests(unittest.TestCase):
         decoded = decode_ephemeris_from_tracking({"I_P": prompt, "PRN": 4}, prn=4)
 
         self.assertEqual(decoded["prn"], 4)
+        self.assertEqual(decoded["subframe_ids"], [1, 2, 3, 4, 5])
+        self.assertAlmostEqual(decoded["tow_seconds"], 1002.0)
+        self.assertAlmostEqual(decoded["ephemeris"]["sqrtA"], 5153.7954775, places=4)
+        self.assertAlmostEqual(decoded["ephemeris"]["e"], 0.01, places=8)
+
+    def test_decode_with_d30star_transitions_noisy_preambles_and_offset(self):
+        frames = []
+        sqrt_a_raw = round(5153.7954775 * (2 ** 19))
+        eccentricity_raw = round(0.01 * (2 ** 33))
+
+        def put_field(frame, start, end, value):
+            frame[start:end] = list(format(value, f"0{end - start}b"))
+
+        for frame_index, subframe_id in enumerate((1, 2, 3, 4, 5)):
+            frame = list("0" * 300)
+            frame[:8] = list("10001011")
+            z_count = ((1002 + 6 * (frame_index + 1)) // 6) % 100800
+            put_field(frame, 30, 47, z_count)
+            put_field(frame, 49, 52, subframe_id)
+            if subframe_id == 1:
+                put_field(frame, 60, 70, 50)
+                put_field(frame, 76, 82, 0)
+                put_field(frame, 196, 204, 42)
+                put_field(frame, 218, 234, 345600 // 16)
+            elif subframe_id == 2:
+                put_field(frame, 60, 68, 42)
+                put_field(frame, 166, 174, eccentricity_raw >> 24)
+                put_field(frame, 180, 204, eccentricity_raw & ((1 << 24) - 1))
+                put_field(frame, 226, 234, sqrt_a_raw >> 24)
+                put_field(frame, 240, 264, sqrt_a_raw & ((1 << 24) - 1))
+                put_field(frame, 270, 286, 345600 // 16)
+            elif subframe_id == 3:
+                put_field(frame, 270, 278, 42)
+            frames.append(frame)
+
+        # Construct parity-valid words and carry D29*/D30* between words.  This
+        # exercises the LNAV data-bit inversion rather than assuming D30*=0.
+        nav_bits = []
+        previous_d29star, previous_d30star = "1", "1"
+        d30star_values = []
+        for frame in frames:
+            for word_index in range(10):
+                data = frame[word_index * 30:word_index * 30 + 24].copy()
+                if previous_d30star == "1":
+                    data = ["0" if bit == "1" else "1" for bit in data]
+                for parity_value in range(64):
+                    word = data + list(f"{parity_value:06b}")
+                    bipolar = np.array([
+                        1 if bit == "1" else -1
+                        for bit in previous_d29star + previous_d30star + "".join(word)
+                    ], dtype=np.int8)
+                    if nav_party_check(bipolar):
+                        break
+                else:
+                    self.fail("Could not construct a valid LNAV parity word")
+
+                nav_bits.extend(word)
+                previous_d29star, previous_d30star = word[-2:]
+                d30star_values.append(previous_d30star)
+
+        self.assertGreater(
+            sum(left != right for left, right in zip(d30star_values, d30star_values[1:])),
+            0,
+            "the test stream should contain D30* transitions",
+        )
+
+        # Two errors in each TLM preamble test the relaxed correlation gate;
+        # they do not affect the ephemeris fields. Add a 7-ms symbol offset.
+        for frame_start in range(0, len(nav_bits), 300):
+            for bit_index in (0, 1):
+                absolute_index = frame_start + bit_index
+                nav_bits[absolute_index] = "0" if nav_bits[absolute_index] == "1" else "1"
+        nav_signs = np.where(np.asarray(nav_bits) == "1", 1.0, -1.0)
+        prompt = np.concatenate((np.full(7, 0.1), np.repeat(nav_signs, 20)))
+
+        candidates = find_nav_preambles({"I_P": prompt})
+        self.assertTrue(any(candidate["phase_ms"] == 7 for candidate in candidates))
+        decoded = decode_ephemeris_from_tracking({"I_P": prompt, "PRN": 4}, prn=4)
         self.assertEqual(decoded["subframe_ids"], [1, 2, 3, 4, 5])
         self.assertAlmostEqual(decoded["tow_seconds"], 1002.0)
         self.assertAlmostEqual(decoded["ephemeris"]["sqrtA"], 5153.7954775, places=4)

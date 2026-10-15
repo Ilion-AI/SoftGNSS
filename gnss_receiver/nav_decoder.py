@@ -7,6 +7,7 @@ subframe preambles, and decodes the broadcast ephemeris.
 """
 
 import logging
+from collections import Counter
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -115,7 +116,10 @@ def _symbol_candidates(i_p: np.ndarray, search_offset: int = 0) -> List[dict]:
         phase_score = float(np.mean(np.abs(soft_symbols)))
         symbols = np.where(soft_symbols >= 0, 1, -1).astype(np.int8)
         correlations = np.correlate(symbols, PREAMBLE_BITS, mode="valid")
-        indices = np.flatnonzero(np.abs(correlations) >= 6)
+        # Permit up to two bit errors in the 8-bit preamble; five consecutive
+        # subframe sync words and consistent HOW/ephemeris fields disambiguate
+        # the additional low-confidence candidates.
+        indices = np.flatnonzero(np.abs(correlations) >= 4)
 
         for bit_index in indices:
             start_ms = phase_ms + int(bit_index) * NAV_SYMBOL_MS
@@ -129,19 +133,11 @@ def _symbol_candidates(i_p: np.ndarray, search_offset: int = 0) -> List[dict]:
                     "symbols": symbols,
                 })
 
-    # A candidate can occasionally be reported by neighbouring phases.  Keep
-    # the strongest one within a 1-ms neighbourhood.
+    # Keep candidates from every millisecond phase.  A neighbouring phase can
+    # have a larger average prompt magnitude on noisy data, so deduplicating
+    # here can discard the true bit boundary before frame-level validation.
     candidates.sort(key=lambda item: (item["start_ms"], -item["phase_score"], -abs(item["correlation"])))
-    deduplicated: List[dict] = []
-    for candidate in candidates:
-        if deduplicated and candidate["start_ms"] - deduplicated[-1]["start_ms"] < NAV_SYMBOL_MS:
-            if (candidate["phase_score"], abs(candidate["correlation"])) > (
-                deduplicated[-1]["phase_score"], abs(deduplicated[-1]["correlation"])
-            ):
-                deduplicated[-1] = candidate
-        else:
-            deduplicated.append(candidate)
-    return deduplicated
+    return candidates
 
 
 def find_nav_preambles(track_data: dict, search_offset: int = 0) -> List[dict]:
@@ -253,37 +249,45 @@ def _has_five_subframe_preambles(symbols: np.ndarray, start: int) -> bool:
         observed = symbols[frame_start:frame_start + len(PREAMBLE_BITS)]
         if len(observed) != len(PREAMBLE_BITS):
             return False
-        if abs(int(np.dot(observed, PREAMBLE_BITS))) < 6:
+        if abs(int(np.dot(observed, PREAMBLE_BITS))) < 4:
             return False
     return True
 
 
-def _ephemeris_is_complete_and_consistent(
+def _ephemeris_consistency_error(
     eph: dict, subframe_ids: List[int], z_counts: List[int]
-) -> bool:
+) -> str:
     required = {
         "weekNumber", "health", "T_GD", "IODC", "t_oc", "a_f2", "a_f1", "a_f0",
         "IODE_sf2", "C_rs", "deltan", "M_0", "C_uc", "e", "C_us", "sqrtA",
         "t_oe", "C_ic", "omega_0", "C_is", "i_0", "C_rc", "omega", "omegaDot",
         "IODE_sf3", "iDot",
     }
-    if not required.issubset(eph):
-        return False
+    missing = required.difference(eph)
+    if missing:
+        return "missing ephemeris fields"
 
     expected_ids = [((subframe_ids[0] - 1 + i) % 5) + 1 for i in range(5)]
     if subframe_ids != expected_ids or set(subframe_ids) != {1, 2, 3, 4, 5}:
-        return False
+        return "subframe IDs are not a consecutive 1–5 sequence"
     if any((z_counts[i + 1] - z_counts[i]) % 100800 != 1 for i in range(4)):
-        return False
+        return "HOW time-of-week counters are not consecutive"
     if eph["IODE_sf2"] != eph["IODE_sf3"]:
-        return False
+        return "IODE differs between subframes 2 and 3"
     if (eph["IODC"] & 0xFF) != eph["IODE_sf2"]:
-        return False
+        return "IODC does not match IODE"
     if not (0.0 <= eph["e"] < 1.0 and 4000.0 < eph["sqrtA"] < 7000.0):
-        return False
+        return "eccentricity or sqrtA is outside the GPS range"
     if not (0 <= eph["t_oe"] < GPS_WEEK_SECONDS and 0 <= eph["t_oc"] < GPS_WEEK_SECONDS):
-        return False
-    return True
+        return "t_oe or t_oc is outside the GPS week"
+    return ""
+
+
+def _ephemeris_is_complete_and_consistent(
+    eph: dict, subframe_ids: List[int], z_counts: List[int]
+) -> bool:
+    """Compatibility predicate for callers that only need a boolean result."""
+    return not _ephemeris_consistency_error(eph, subframe_ids, z_counts)
 
 
 def decode_ephemeris_from_tracking(track_data: dict, prn: int = None) -> dict:
@@ -305,11 +309,16 @@ def decode_ephemeris_from_tracking(track_data: dict, prn: int = None) -> dict:
         prn = int(track_data.get("PRN", 0))
 
     candidates = find_nav_preambles(track_data)
+    synchronized_sequences = 0
+    decode_attempts = 0
+    rejections = Counter()
+
     for candidate in candidates:
         symbols = candidate["symbols"]
         bit_index = candidate["bit_index"]
         if not _has_five_subframe_preambles(symbols, bit_index):
             continue
+        synchronized_sequences += 1
 
         raw_symbols = symbols[bit_index:bit_index + EPHEMERIS_BITS]
         previous_symbol = symbols[bit_index - 1] if bit_index > 0 else None
@@ -325,11 +334,16 @@ def decode_ephemeris_from_tracking(track_data: dict, prn: int = None) -> dict:
 
             nav_bits = ["1" if value > 0 else "0" for value in signed_symbols]
             for d30star in previous_options:
+                decode_attempts += 1
                 try:
                     eph, tow, subframe_ids, z_counts = _decode_subframes(nav_bits, d30star)
                 except (ValueError, IndexError, TypeError):
+                    rejections["navigation-bit parsing errors"] += 1
                     continue
-                if not _ephemeris_is_complete_and_consistent(eph, subframe_ids, z_counts):
+
+                validation_error = _ephemeris_consistency_error(eph, subframe_ids, z_counts)
+                if validation_error:
+                    rejections[validation_error] += 1
                     continue
 
                 return {
@@ -343,7 +357,16 @@ def decode_ephemeris_from_tracking(track_data: dict, prn: int = None) -> dict:
                 }
 
     duration_ms = len(np.asarray(track_data.get("I_P", [])))
+    diagnostics = (
+        f"{len(candidates)} preamble candidates, {synchronized_sequences} five-subframe "
+        f"sync sequences, {decode_attempts} data decodes"
+    )
+    if rejections:
+        common_rejections = ", ".join(
+            f"{reason}: {count}" for reason, count in rejections.most_common(3)
+        )
+        diagnostics += f"; rejected by {common_rejections}"
     raise NavigationDecodeError(
         f"PRN {prn}: no complete, consistent 30-second GPS ephemeris found "
-        f"in {duration_ms} ms of tracking data"
+        f"in {duration_ms} ms of tracking data ({diagnostics})"
     )
